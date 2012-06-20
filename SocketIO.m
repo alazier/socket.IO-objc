@@ -21,9 +21,7 @@
 //
 
 #import "SocketIO.h"
-
 #import "SRWebSocket.h"
-#import "SBJson.h"
 
 #define DEBUG_LOGS 1
 #define DEBUG_CERTIFICATE 1
@@ -111,7 +109,7 @@ static NSString* kSecureXHRURL = @"https://%@:%d/socket.io/1/xhr-polling/%@";
         [self log:[NSString stringWithFormat:@"Connecting to socket with URL: %@",s]];
         NSURL *url = [NSURL URLWithString:s];
         query = nil;
-                
+        
         
         // make a request
         NSURLRequest *request = [NSURLRequest requestWithURL:url
@@ -156,7 +154,7 @@ static NSString* kSecureXHRURL = @"https://%@:%d/socket.io/1/xhr-polling/%@";
 - (void) sendJSON:(NSDictionary *)data withAcknowledge:(SocketIOCallback)function
 {
     SocketIOPacket *packet = [[SocketIOPacket alloc] initWithType:@"json"];
-    packet.data = [data JSONRepresentation];
+    packet.data = [NSString stringWithUTF8String:[[NSJSONSerialization dataWithJSONObject:data options:0 error:nil] bytes]];
     packet.pId = [self addAcknowledge:function];
     [self send:packet];
 }
@@ -169,14 +167,15 @@ static NSString* kSecureXHRURL = @"https://%@:%d/socket.io/1/xhr-polling/%@";
 - (void) sendEvent:(NSString *)eventName withData:(NSDictionary *)data andAcknowledge:(SocketIOCallback)function
 {
     NSMutableDictionary *dict = [NSMutableDictionary dictionaryWithObject:eventName forKey:@"name"];
-
+    
     // do not require arguments
     if (data != nil) {
         [dict setObject:data forKey:@"args"];
     }
     
     SocketIOPacket *packet = [[SocketIOPacket alloc] initWithType:@"event"];
-    packet.data = [dict JSONRepresentation];
+    packet.data = [NSString stringWithUTF8String:[[NSJSONSerialization dataWithJSONObject:dict options:0 error:nil] bytes]];
+    
     packet.pId = [self addAcknowledge:function];
     if (function) {
         packet.ack = @"data";
@@ -187,10 +186,10 @@ static NSString* kSecureXHRURL = @"https://%@:%d/socket.io/1/xhr-polling/%@";
 - (void) sendAcknowledgement:(NSString *)pId withArgs:(NSArray *)data 
 {
     SocketIOPacket *packet = [[SocketIOPacket alloc] initWithType:@"ack"];
-    packet.data = [data JSONRepresentation];
+    packet.data = [NSString stringWithUTF8String:[[NSJSONSerialization dataWithJSONObject:data options:0 error:nil] bytes]];
     packet.pId = pId;
     packet.ack = @"data";
-
+    
     [self send:packet];
 }
 
@@ -201,7 +200,7 @@ static NSString* kSecureXHRURL = @"https://%@:%d/socket.io/1/xhr-polling/%@";
 {
     NSString *urlStr = [NSString stringWithFormat:(_useSecure ? kSecureSocketURL : kInsecureSocketURL), _host, _port, _sid];
     NSURL *url = [NSURL URLWithString:urlStr];
-
+    
     _webSocket = nil;
     
     _webSocket = [[SRWebSocket alloc] initWithURL:url];
@@ -299,7 +298,7 @@ static NSString* kSecureXHRURL = @"https://%@:%d/socket.io/1/xhr-polling/%@";
     // check if data is valid (from socket.io.js)
     NSString *regex = @"^([^:]+):([0-9]+)?(\\+)?:([^:]+)?:?(.*)?$";
     NSString *regexPieces = @"^([0-9]+)(\\+)?(.*)";
-
+    
     // create regex result
     NSMutableArray *test = [self getMatchesFrom:data with:regex];
     
@@ -379,7 +378,11 @@ static NSString* kSecureXHRURL = @"https://%@:%d/socket.io/1/xhr-polling/%@";
                     NSString *argsStr = [piece objectAtIndex:3];
                     id argsData = nil;
                     if (argsStr && ![argsStr isEqualToString:@""]) {
-                        argsData = [argsStr JSONValue];
+                        
+                        NSError * error;
+                        argsData = [NSJSONSerialization JSONObjectWithData:[argsStr dataUsingEncoding:NSUTF8StringEncoding]
+                                                                   options:0 
+                                                                     error:&error];
                         if ([argsData count] > 0) {
                             argsData = [argsData objectAtIndex:0];
                         }
@@ -409,7 +412,7 @@ static NSString* kSecureXHRURL = @"https://%@:%d/socket.io/1/xhr-polling/%@";
                 break;
             }
         }
-
+        
         packet = nil;
     }
     else {
@@ -435,7 +438,7 @@ static NSString* kSecureXHRURL = @"https://%@:%d/socket.io/1/xhr-polling/%@";
     [self log:@"onConnect()"];
     
     _isConnected = YES;
-
+    
     // Send the connected packet so the server knows what it's dealing with.
     // Only required when endpoint/namespace is present
     if ([_endpoint length] > 0) {
@@ -587,7 +590,7 @@ static NSString* kSecureXHRURL = @"https://%@:%d/socket.io/1/xhr-polling/%@";
 - (void) connectionDidFinishLoading:(NSURLConnection *)connection 
 { 	
  	NSString *responseString = [[NSString alloc] initWithData:_httpRequestData encoding:NSASCIIStringEncoding];
-
+    
     [self log:[NSString stringWithFormat:@"requestFinished() %@", responseString]];
     NSArray *data = [responseString componentsSeparatedByString:@":"];
     
@@ -745,7 +748,11 @@ didReceiveAuthenticationChallenge:(NSURLAuthenticationChallenge *)challenge
 
 - (id) dataAsJSON
 {
-    return [self.data JSONValue];
+    NSError * error;
+    NSDictionary * json = [NSJSONSerialization JSONObjectWithData:[self.data dataUsingEncoding:NSUTF8StringEncoding]
+                                                          options:0 
+                                                            error:&error];
+    return json;
 }
 
 - (NSNumber *) typeAsNumber
